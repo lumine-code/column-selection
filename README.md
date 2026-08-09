@@ -16,7 +16,7 @@ To install `column-selection` search for _column-selection_ in the Install pane 
 
 ## Commands
 
-Commands available in `atom-workspace`:
+Commands available in `lumine-workspace`:
 
 - `column-selection:sticky`: toggle persistent column selection mode,
 - `column-selection:picker`: toggle two-click picker mode.

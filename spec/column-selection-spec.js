@@ -12,10 +12,10 @@ const HINT_STYLE = `.${HINT_CLASS}::before { content: "HHHHHHHH"; }`;
 
 describe("column-selection", () => {
   it("activates and deactivates cleanly", async () => {
-    await atom.packages.activatePackage(packageRoot);
-    expect(atom.packages.isPackageActive("column-selection")).toBe(true);
-    await atom.packages.deactivatePackage("column-selection");
-    expect(atom.packages.isPackageActive("column-selection")).toBe(false);
+    await lumine.packages.activatePackage(packageRoot);
+    expect(lumine.packages.isPackageActive("column-selection")).toBe(true);
+    await lumine.packages.deactivatePackage("column-selection");
+    expect(lumine.packages.isPackageActive("column-selection")).toBe(false);
   });
 
   describe("resolving the column under the pointer", () => {
@@ -28,15 +28,15 @@ describe("column-selection", () => {
     let styleElement;
 
     beforeEach(async () => {
-      const workspaceElement = atom.views.getView(atom.workspace);
+      const workspaceElement = lumine.views.getView(lumine.workspace);
       workspaceElement.style.height = "300px";
       workspaceElement.style.width = "1000px";
       jasmine.attachToDOM(workspaceElement);
 
-      const pack = await atom.packages.activatePackage(packageRoot);
+      const pack = await lumine.packages.activatePackage(packageRoot);
       mainModule = pack.mainModule;
 
-      editor = await atom.workspace.open();
+      editor = await lumine.workspace.open();
       editor.setText("0123456789\nabcdefghij\n");
       element = editor.getElement();
       component = element.getComponent();
@@ -50,8 +50,8 @@ describe("column-selection", () => {
     afterEach(async () => {
       styleElement?.remove();
       styleElement = null;
-      await atom.packages.deactivatePackage("column-selection");
-      for (const open of atom.workspace.getTextEditors()) open.destroy();
+      await lumine.packages.deactivatePackage("column-selection");
+      for (const open of lumine.workspace.getTextEditors()) open.destroy();
     });
 
     // A pointer over a content pixel, in the client coordinates a real mouse

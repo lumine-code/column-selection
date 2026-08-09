@@ -2,8 +2,8 @@
   // Both are editor modes rather than surfaces, so they are scoped to the
   // editor rather than held at workspace scope: a bare alt-<letter> there is
   // reserved for revealing a panel or a picker. The handlers are registered on
-  // atom-workspace, so a dispatch from the editor still reaches them.
-  "atom-text-editor:not([mini])": {
+  // lumine-workspace, so a dispatch from the editor still reaches them.
+  "lumine-text-editor:not([mini])": {
     "alt-q": "column-selection:sticky",
     "ctrl-q": "column-selection:picker"
   }
