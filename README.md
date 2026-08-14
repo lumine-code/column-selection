@@ -12,7 +12,7 @@ Create rectangular selections across lines by dragging.
 
 ## Installation
 
-To install `column-selection` search for _column-selection_ in the Install pane of the Lumine settings or run `lumine --install lumine-code/column-selection`.
+To install `column-selection` search for it in the Install pane of the Lumine settings, or run the command `lumine --install lumine-code/column-selection`.
 
 ## Commands
 
@@ -38,7 +38,7 @@ The status bar indicator can be adjusted in your `styles.css`:
 
 ## Services
 
-- **status-bar** (`^1.0.0`): consumed to show the column-selection mode indicator in the status bar.
+- `status-bar`: consumed to show the column-selection mode indicator in the status bar.
 
 ## Contributing
 
