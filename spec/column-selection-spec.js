@@ -281,6 +281,59 @@ describe("column-selection", () => {
     });
   });
 
+  describe("scrolling", () => {
+    it("follows a sticky gesture to the bottom edge", () => {
+      useLines(200);
+      editor.setCursorScreenPosition([0, 0]);
+      mainModule.toggleSticky();
+      expect(component.getScrollTop()).toBe(0);
+
+      // Well below the editor; the component clamps the pointer to its own
+      // scroll container, so this lands on the bottom-most visible row.
+      element.dispatchEvent(
+        eventAtPixel(
+          "mousedown",
+          { top: 10000, left: 5 * charWidth },
+          { button: 0, shiftKey: true },
+        ),
+      );
+      component.updateSync();
+
+      expect(component.getScrollTop()).toBeGreaterThan(0);
+    });
+
+    it("completes a picker box without moving the viewport", () => {
+      useLines(200);
+      mainModule.togglePicker();
+      const before = component.getScrollTop();
+
+      element.dispatchEvent(eventAt("mouseup", { row: 0, column: 2 }, { button: 0 }));
+      element.dispatchEvent(eventAt("mouseup", { row: 3, column: 6 }, { button: 0 }));
+      component.updateSync();
+
+      expect(component.getScrollTop()).toBe(before);
+      expect(mainModule.pickerFlag).toBe(false);
+      expect(editor.getSelectedBufferRanges()).toEqual([
+        [
+          [0, 2],
+          [0, 6],
+        ],
+        [
+          [1, 2],
+          [1, 6],
+        ],
+        [
+          [2, 2],
+          [2, 6],
+        ],
+        [
+          [3, 2],
+          [3, 6],
+        ],
+      ]);
+    });
+  });
+
   describe("folds", () => {
     // Row-range folds rather than foldBufferRow: the fixture is plain text with
     // no grammar to say what is foldable.
