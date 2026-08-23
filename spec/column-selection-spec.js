@@ -112,6 +112,23 @@ describe("column-selection", () => {
     });
   });
 
+  describe("the autoscroll loop", () => {
+    it("stops when picker mode takes the mouse up", () => {
+      // Sticky mode makes the left button start a drag, which is what puts the
+      // release into the picker's `which === 1` branch -- the one path out of
+      // a gesture that never reaches resetGesture.
+      mainModule.toggleSticky();
+      element.dispatchEvent(eventAt("mousedown", { row: 0, column: 2 }, { button: 0 }));
+      element.dispatchEvent(eventAt("mousemove", { row: 1, column: 5 }, { button: 0 }));
+      expect(mainModule.dragging).toBe(true);
+
+      mainModule.togglePicker();
+      element.dispatchEvent(eventAt("mouseup", { row: 1, column: 5 }, { button: 0 }));
+
+      expect(mainModule.dragging).toBe(false);
+    });
+  });
+
   describe("resolving the column under the pointer", () => {
     it("names the column the pointer is over", () => {
       mainModule.editor = editor;
