@@ -11,86 +11,87 @@ const HINT_CLASS = "column-selection-spec-hint";
 const HINT_STYLE = `.${HINT_CLASS}::before { content: "HHHHHHHH"; }`;
 
 describe("column-selection", () => {
-  it("activates and deactivates cleanly", async () => {
-    await lumine.packages.activatePackage(packageRoot);
-    expect(lumine.packages.isPackageActive("column-selection")).toBe(true);
+  let mainModule;
+  let editor;
+  let element;
+  let component;
+  let charWidth;
+  let lineHeight;
+  let styleElement;
+
+  beforeEach(async () => {
+    const workspaceElement = lumine.views.getView(lumine.workspace);
+    workspaceElement.style.height = "300px";
+    workspaceElement.style.width = "1000px";
+    jasmine.attachToDOM(workspaceElement);
+
+    const pack = await lumine.packages.activatePackage(packageRoot);
+    mainModule = pack.mainModule;
+
+    editor = await lumine.workspace.open();
+    editor.setText("0123456789\nabcdefghij\n");
+    element = editor.getElement();
+    component = element.getComponent();
+    component.updateSync();
+
+    charWidth = editor.getDefaultCharWidth();
+    lineHeight = editor.getLineHeightInPixels();
+    expect(charWidth).toBeGreaterThan(0);
+  });
+
+  afterEach(async () => {
+    styleElement?.remove();
+    styleElement = null;
     await lumine.packages.deactivatePackage("column-selection");
-    expect(lumine.packages.isPackageActive("column-selection")).toBe(false);
+    for (const open of lumine.workspace.getTextEditors()) open.destroy();
+  });
+
+  // A pointer over a content pixel, in the client coordinates a real mouse
+  // event carries.
+  function eventAtPixel(type, { top, left }, properties = {}) {
+    const linesRect = element.querySelector(".lines").getBoundingClientRect();
+    return new MouseEvent(type, {
+      bubbles: true,
+      clientX: linesRect.left + left,
+      clientY: linesRect.top + top,
+      ...properties,
+    });
+  }
+
+  // A pointer `offset` character widths right of where `column` is drawn,
+  // which is not `column * charWidth` once the line carries a label.
+  function eventAt(type, { row, column, offset = 0.5 }, properties = {}) {
+    const pixel = component.pixelPositionForScreenPosition({ row, column });
+    return eventAtPixel(
+      type,
+      { top: pixel.top + lineHeight / 2, left: pixel.left + offset * charWidth },
+      properties,
+    );
+  }
+
+  function leftOf(row, column) {
+    return component.pixelPositionForScreenPosition({ row, column }).left;
+  }
+
+  function decorateWithHint(range) {
+    styleElement = document.createElement("style");
+    styleElement.textContent = HINT_STYLE;
+    document.head.appendChild(styleElement);
+    const marker = editor.markScreenRange(range);
+    editor.decorateMarker(marker, { type: "text", class: HINT_CLASS });
+    component.updateSync();
+    return marker;
+  }
+
+  describe("package lifecycle", () => {
+    it("activates and deactivates cleanly", async () => {
+      expect(lumine.packages.isPackageActive("column-selection")).toBe(true);
+      await lumine.packages.deactivatePackage("column-selection");
+      expect(lumine.packages.isPackageActive("column-selection")).toBe(false);
+    });
   });
 
   describe("resolving the column under the pointer", () => {
-    let mainModule;
-    let editor;
-    let element;
-    let component;
-    let charWidth;
-    let lineHeight;
-    let styleElement;
-
-    beforeEach(async () => {
-      const workspaceElement = lumine.views.getView(lumine.workspace);
-      workspaceElement.style.height = "300px";
-      workspaceElement.style.width = "1000px";
-      jasmine.attachToDOM(workspaceElement);
-
-      const pack = await lumine.packages.activatePackage(packageRoot);
-      mainModule = pack.mainModule;
-
-      editor = await lumine.workspace.open();
-      editor.setText("0123456789\nabcdefghij\n");
-      element = editor.getElement();
-      component = element.getComponent();
-      component.updateSync();
-
-      charWidth = editor.getDefaultCharWidth();
-      lineHeight = editor.getLineHeightInPixels();
-      expect(charWidth).toBeGreaterThan(0);
-    });
-
-    afterEach(async () => {
-      styleElement?.remove();
-      styleElement = null;
-      await lumine.packages.deactivatePackage("column-selection");
-      for (const open of lumine.workspace.getTextEditors()) open.destroy();
-    });
-
-    // A pointer over a content pixel, in the client coordinates a real mouse
-    // event carries.
-    function eventAtPixel(type, { top, left }, properties = {}) {
-      const linesRect = element.querySelector(".lines").getBoundingClientRect();
-      return new MouseEvent(type, {
-        bubbles: true,
-        clientX: linesRect.left + left,
-        clientY: linesRect.top + top,
-        ...properties,
-      });
-    }
-
-    // A pointer `offset` character widths right of where `column` is drawn,
-    // which is not `column * charWidth` once the line carries a label.
-    function eventAt(type, { row, column, offset = 0.5 }, properties = {}) {
-      const pixel = component.pixelPositionForScreenPosition({ row, column });
-      return eventAtPixel(
-        type,
-        { top: pixel.top + lineHeight / 2, left: pixel.left + offset * charWidth },
-        properties,
-      );
-    }
-
-    function leftOf(row, column) {
-      return component.pixelPositionForScreenPosition({ row, column }).left;
-    }
-
-    function decorateWithHint(range) {
-      styleElement = document.createElement("style");
-      styleElement.textContent = HINT_STYLE;
-      document.head.appendChild(styleElement);
-      const marker = editor.markScreenRange(range);
-      editor.decorateMarker(marker, { type: "text", class: HINT_CLASS });
-      component.updateSync();
-      return marker;
-    }
-
     it("names the column the pointer is over", () => {
       mainModule.editor = editor;
       const position = mainModule.screenPositionForMouseEvent(
