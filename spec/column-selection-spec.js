@@ -281,6 +281,61 @@ describe("column-selection", () => {
     });
   });
 
+  describe("folds", () => {
+    // Row-range folds rather than foldBufferRow: the fixture is plain text with
+    // no grammar to say what is foldable.
+    function foldTwoRegions() {
+      useLines(20);
+      editor.foldBufferRowRange(4, 6);
+      editor.foldBufferRowRange(12, 14);
+      component.updateSync();
+      expect(editor.isFoldedAtBufferRow(4)).toBeTruthy();
+      expect(editor.isFoldedAtBufferRow(12)).toBeTruthy();
+    }
+
+    it("keeps a fold the box is dragged across", () => {
+      foldTwoRegions();
+
+      // Screen row 4 is the folded region; the box runs from above it to below.
+      element.dispatchEvent(eventAt("mousedown", { row: 2, column: 2 }, { button: 2 }));
+      element.dispatchEvent(eventAt("mousemove", { row: 6, column: 6 }, { button: 2 }));
+      element.dispatchEvent(eventAt("mouseup", { row: 6, column: 6 }, { button: 2 }));
+
+      expect(editor.isFoldedAtBufferRow(4)).toBeTruthy();
+      expect(editor.isFoldedAtBufferRow(12)).toBeTruthy();
+    });
+
+    it("a plain selection still drops the fold it crosses", () => {
+      // The control for the spec above: it proves this harness can see a fold
+      // die, so asserting that one survived is not vacuous.
+      foldTwoRegions();
+
+      editor.setSelectedBufferRange([
+        [5, 0],
+        [5, 2],
+      ]);
+
+      expect(editor.isFoldedAtBufferRow(4)).toBeFalsy();
+      expect(editor.isFoldedAtBufferRow(12)).toBeTruthy();
+    });
+
+    it("never asks the marker index about folds while dragging", () => {
+      // The fold pass costs two marker-index queries per write and per frame,
+      // and it can only ever find a fold when a selection endpoint is inside
+      // one -- which a box's endpoints, being positions the pointer resolved on
+      // screen, never are. So this is what preserving folds actually buys, and
+      // a call count is the only way to see it.
+      useLines(20);
+      const folds = spyOn(editor.displayLayer, "destroyFoldsContainingBufferPositions");
+
+      element.dispatchEvent(eventAt("mousedown", { row: 1, column: 2 }, { button: 2 }));
+      element.dispatchEvent(eventAt("mousemove", { row: 8, column: 6 }, { button: 2 }));
+      element.dispatchEvent(eventAt("mouseup", { row: 8, column: 6 }, { button: 2 }));
+
+      expect(folds.calls.count()).toBe(0);
+    });
+  });
+
   describe("when the editor is destroyed mid-gesture", () => {
     // Built before the editor dies: the helpers measure through the component,
     // which is gone afterwards.
