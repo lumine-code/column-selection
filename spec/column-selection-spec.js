@@ -89,6 +89,27 @@ describe("column-selection", () => {
       await lumine.packages.deactivatePackage("column-selection");
       expect(lumine.packages.isPackageActive("column-selection")).toBe(false);
     });
+
+    it("re-arms the throttle instead of wrapping the last one", async () => {
+      // The module object outlives a deactivation, so a throttle written over
+      // the method would be the thing wrapped on the next activation.
+      const method = mainModule.selectBox;
+      const throttled = mainModule.throttledSelectBox;
+
+      await lumine.packages.deactivatePackage("column-selection");
+      await lumine.packages.activatePackage(packageRoot);
+
+      expect(mainModule.selectBox).toBe(method);
+      expect(mainModule.throttledSelectBox).not.toBe(throttled);
+    });
+
+    it("disposes every listener it registered", async () => {
+      // Three config observers, one config change, one command map, and the
+      // five window listeners.
+      expect(mainModule.disposables.disposables.size).toBe(10);
+      await lumine.packages.deactivatePackage("column-selection");
+      expect(mainModule.disposables.disposables).toBeNull();
+    });
   });
 
   describe("resolving the column under the pointer", () => {
