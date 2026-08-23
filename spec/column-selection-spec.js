@@ -113,6 +113,16 @@ describe("column-selection", () => {
       expect(mainModule.throttledSelectBox).not.toBe(throttled);
     });
 
+    it("keeps no editor subscription after a gesture", () => {
+      element.dispatchEvent(eventAt("mousedown", { row: 0, column: 2 }, { button: 2 }));
+      element.dispatchEvent(eventAt("mousemove", { row: 1, column: 5 }, { button: 2 }));
+      expect(mainModule.editorDisposable).toBeTruthy();
+
+      element.dispatchEvent(eventAt("mouseup", { row: 1, column: 5 }, { button: 2 }));
+      expect(mainModule.editorDisposable).toBeNull();
+      expect(mainModule.editor).toBeNull();
+    });
+
     it("disposes every listener it registered", async () => {
       // Three config observers, one config change, one command map, and the
       // five window listeners.
@@ -172,6 +182,42 @@ describe("column-selection", () => {
 
       element.dispatchEvent(eventAt("mouseup", { row: 0, column: 3 }, { button: 2 }));
       expect(mainModule.autoscrollToken).toBeNull();
+    });
+  });
+
+  describe("when the editor is destroyed mid-gesture", () => {
+    // Built before the editor dies: the helpers measure through the component,
+    // which is gone afterwards.
+    function startGestureAndDestroy() {
+      const release = eventAt("mouseup", { row: 1, column: 5 }, { button: 2 });
+      element.dispatchEvent(eventAt("mousedown", { row: 0, column: 2 }, { button: 2 }));
+      element.dispatchEvent(eventAt("mousemove", { row: 1, column: 5 }, { button: 2 }));
+      expect(mainModule.editor).toBe(editor);
+      editor.destroy();
+      return release;
+    }
+
+    it("lets go of the editor", () => {
+      startGestureAndDestroy();
+      expect(mainModule.editor).toBeNull();
+      expect(mainModule.editorDisposable).toBeNull();
+      expect(mainModule.dragging).toBe(false);
+      expect(mainModule.autoscrollToken).toBeNull();
+    });
+
+    it("leaves the editor's own teardown to finish", () => {
+      startGestureAndDestroy();
+      // `component` is nulled on the line after `did-destroy` is emitted, so a
+      // handler that threw would leave it set.
+      expect(editor.component).toBeNull();
+    });
+
+    it("survives the mouse up that follows", () => {
+      const release = startGestureAndDestroy();
+      // Called rather than dispatched: dispatchEvent swallows a listener's
+      // exception into a global error report, so a throw would not be visible.
+      expect(() => mainModule.mouseUp(release)).not.toThrow();
+      expect(mainModule.editor).toBeNull();
     });
   });
 
