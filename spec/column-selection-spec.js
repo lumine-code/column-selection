@@ -83,6 +83,13 @@ describe("column-selection", () => {
     return marker;
   }
 
+  // A taller buffer than the default, for the specs whose box spans more rows
+  // than the fixture has.
+  function useLines(count) {
+    editor.setText("0123456789\n".repeat(count));
+    component.updateSync();
+  }
+
   // `waitForFrames` resolves on a condition; this is the "yield N frames" form,
   // which is what the leading-edge throttle and the autoscroll loop need.
   async function waitFrames(count = 1) {
@@ -182,6 +189,95 @@ describe("column-selection", () => {
 
       element.dispatchEvent(eventAt("mouseup", { row: 0, column: 3 }, { button: 2 }));
       expect(mainModule.autoscrollToken).toBeNull();
+    });
+  });
+
+  describe("merging", () => {
+    it("leaves the box's rows unmerged until the gesture ends", () => {
+      useLines(6);
+      editor.setCursorScreenPosition([0, 0]);
+      mainModule.toggleSticky();
+
+      element.dispatchEvent(
+        eventAt("mousedown", { row: 3, column: 5 }, { button: 0, shiftKey: true }),
+      );
+
+      // The anchor's own empty selection is preserved alongside the box, and
+      // the box's first row starts on top of it. Nothing resolves that while
+      // the gesture is running.
+      expect(editor.getSelections().length).toBe(5);
+      expect(editor.getSelectedBufferRanges()[0]).toEqual([
+        [0, 0],
+        [0, 0],
+      ]);
+
+      element.dispatchEvent(eventAt("mouseup", { row: 3, column: 5 }, { button: 0 }));
+
+      expect(editor.getSelectedBufferRanges()).toEqual([
+        [
+          [0, 0],
+          [0, 5],
+        ],
+        [
+          [1, 0],
+          [1, 5],
+        ],
+        [
+          [2, 0],
+          [2, 5],
+        ],
+        [
+          [3, 0],
+          [3, 5],
+        ],
+      ]);
+      expect(editor.getSelections().map((selection) => selection.isReversed())).toEqual([
+        false,
+        false,
+        false,
+        false,
+      ]);
+    });
+
+    it("merges a preserved selection the box grows into", () => {
+      useLines(6);
+      lumine.config.set("editor.multiCursorOnClick", true);
+      editor.setSelectedBufferRange([
+        [1, 0],
+        [1, 10],
+      ]);
+
+      element.dispatchEvent(
+        eventAt("mousedown", { row: 0, column: 2 }, { button: 2, ctrlKey: true }),
+      );
+      element.dispatchEvent(eventAt("mousemove", { row: 3, column: 6 }, { button: 2 }));
+
+      // Four box rows plus the selection the gesture was told to keep.
+      expect(editor.getSelections().length).toBe(5);
+
+      element.dispatchEvent(eventAt("mouseup", { row: 3, column: 6 }, { button: 2 }));
+
+      // Selections come back in the order they were created, so the preserved
+      // one keeps its slot at the front and the box row it swallowed is simply
+      // absent -- row 1's [1, 2]-[1, 6] is inside it.
+      expect(editor.getSelectedBufferRanges()).toEqual([
+        [
+          [1, 0],
+          [1, 10],
+        ],
+        [
+          [0, 2],
+          [0, 6],
+        ],
+        [
+          [2, 2],
+          [2, 6],
+        ],
+        [
+          [3, 2],
+          [3, 6],
+        ],
+      ]);
     });
   });
 
