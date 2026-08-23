@@ -83,6 +83,16 @@ describe("column-selection", () => {
     return marker;
   }
 
+  // `waitForFrames` resolves on a condition; this is the "yield N frames" form,
+  // which is what the leading-edge throttle and the autoscroll loop need.
+  async function waitFrames(count = 1) {
+    let remaining = count;
+    await waitForFrames(() => --remaining <= 0, {
+      frames: count + 2,
+      description: `${count} animation frames`,
+    });
+  }
+
   describe("package lifecycle", () => {
     it("activates and deactivates cleanly", async () => {
       expect(lumine.packages.isPackageActive("column-selection")).toBe(true);
@@ -126,6 +136,42 @@ describe("column-selection", () => {
       element.dispatchEvent(eventAt("mouseup", { row: 1, column: 5 }, { button: 0 }));
 
       expect(mainModule.dragging).toBe(false);
+    });
+
+    it("really stops scheduling frames", async () => {
+      const scrolls = spyOn(component, "autoscrollOnMouseDrag");
+      mainModule.toggleSticky();
+      element.dispatchEvent(eventAt("mousedown", { row: 0, column: 2 }, { button: 0 }));
+      element.dispatchEvent(eventAt("mousemove", { row: 1, column: 5 }, { button: 0 }));
+
+      await waitFrames(2);
+      expect(scrolls.calls.count()).toBeGreaterThan(0);
+
+      mainModule.togglePicker();
+      element.dispatchEvent(eventAt("mouseup", { row: 1, column: 5 }, { button: 0 }));
+      const settled = scrolls.calls.count();
+
+      await waitFrames(3);
+      expect(scrolls.calls.count()).toBe(settled);
+      // The loop owns the token and drops it on the way out, so this is what
+      // says the chain ended rather than merely idling.
+      expect(mainModule.autoscrollToken).toBeNull();
+    });
+
+    it("starts one loop per gesture, not one per press", () => {
+      // Sticky mode accepts the left button and the configured button both, so
+      // two presses without a release in between used to arm two loops -- and
+      // two loops scroll at twice the speed, which grows the box faster still.
+      mainModule.toggleSticky();
+      element.dispatchEvent(eventAt("mousedown", { row: 0, column: 2 }, { button: 0 }));
+      const token = mainModule.autoscrollToken;
+      expect(token).toBeTruthy();
+
+      element.dispatchEvent(eventAt("mousedown", { row: 0, column: 3 }, { button: 2 }));
+      expect(mainModule.autoscrollToken).toBe(token);
+
+      element.dispatchEvent(eventAt("mouseup", { row: 0, column: 3 }, { button: 2 }));
+      expect(mainModule.autoscrollToken).toBeNull();
     });
   });
 
