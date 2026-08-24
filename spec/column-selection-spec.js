@@ -389,6 +389,282 @@ describe("column-selection", () => {
     });
   });
 
+  describe("reusing the previous frame's box", () => {
+    // The autoscroll loop is stubbed inert so nothing scrolls between the
+    // scripted moves, which is what makes the translation counts exact. The
+    // throttle is leading-edge, so each dispatched move runs synchronously and
+    // a frame is yielded before the next one re-arms it.
+    beforeEach(() => {
+      spyOn(component, "autoscrollOnMouseDrag");
+    });
+
+    it("lands exactly where computing every row from scratch lands", async () => {
+      useLines(10);
+      element.dispatchEvent(eventAt("mousedown", { row: 4, column: 4 }, { button: 2 }));
+
+      // Grow, shrink, a flip across the anchor, a descending grow, and a
+      // column change: every move the cache can and cannot absorb.
+      const legs = [
+        { row: 8, column: 7 },
+        { row: 6, column: 7 },
+        { row: 1, column: 7 },
+        { row: 0, column: 7 },
+        { row: 3, column: 2 },
+      ];
+      for (const leg of legs) {
+        element.dispatchEvent(eventAt("mousemove", leg, { button: 2 }));
+        // The oracle knows nothing about the cache, which is the point.
+        const expected = mainModule.rangesForBox(mainModule.mouseStart, mainModule.mouseEnd);
+        expect(editor.getSelectedBufferRanges()).toEqual(expected);
+        await waitFrames(1);
+      }
+
+      expect(editor.getSelections().every((selection) => selection.isReversed())).toBe(true);
+      element.dispatchEvent(eventAt("mouseup", { row: 3, column: 2 }, { button: 2 }));
+      // Creation order: a descending box walks from the anchor down, so row 4
+      // was written before row 3.
+      expect(editor.getSelectedBufferRanges()).toEqual([
+        [
+          [4, 2],
+          [4, 4],
+        ],
+        [
+          [3, 2],
+          [3, 4],
+        ],
+      ]);
+    });
+
+    it("translates only the rows the pointer newly crossed", async () => {
+      useLines(20);
+      element.dispatchEvent(eventAt("mousedown", { row: 1, column: 2 }, { button: 2 }));
+      element.dispatchEvent(eventAt("mousemove", { row: 4, column: 6 }, { button: 2 }));
+      await waitFrames(1);
+
+      const translate = spyOn(editor, "bufferRangeForScreenRange").and.callThrough();
+      element.dispatchEvent(eventAt("mousemove", { row: 6, column: 6 }, { button: 2 }));
+
+      expect(translate.calls.count()).toBe(2);
+      expect(editor.getSelections().length).toBe(6);
+      element.dispatchEvent(eventAt("mouseup", { row: 6, column: 6 }, { button: 2 }));
+    });
+
+    it("flips between bare cursors and real ranges at a content boundary", async () => {
+      editor.setText("\n\n\n0123456789\n0123456789\n");
+      component.updateSync();
+
+      // The empty rows have nothing rendered to measure against, so the
+      // pointer position must come from raw pixels: past the end of the line
+      // the package counts character widths itself.
+      element.dispatchEvent(
+        eventAtPixel("mousedown", { top: lineHeight / 2, left: 0.2 * charWidth }, { button: 2 }),
+      );
+      const overEmptyRows = { top: 2.5 * lineHeight, left: 6.2 * charWidth };
+      element.dispatchEvent(eventAtPixel("mousemove", overEmptyRows, { button: 2 }));
+
+      expect(editor.getSelectedBufferRanges()).toEqual([
+        [
+          [0, 0],
+          [0, 0],
+        ],
+        [
+          [1, 0],
+          [1, 0],
+        ],
+        [
+          [2, 0],
+          [2, 0],
+        ],
+      ]);
+
+      // One row further sits real text: the bucket flips and the bare cursors
+      // retroactively drop out, which only the full walk decides correctly.
+      await waitFrames(1);
+      element.dispatchEvent(
+        eventAt("mousemove", { row: 3, column: 6, offset: 0.2 }, { button: 2 }),
+      );
+      expect(editor.getSelectedBufferRanges()).toEqual([
+        [
+          [3, 0],
+          [3, 6],
+        ],
+      ]);
+
+      // And back: trimming the only kept row empties the cache, and the rows
+      // the walk discarded on the way out become the box again.
+      await waitFrames(1);
+      element.dispatchEvent(eventAtPixel("mousemove", overEmptyRows, { button: 2 }));
+      expect(editor.getSelectedBufferRanges()).toEqual([
+        [
+          [0, 0],
+          [0, 0],
+        ],
+        [
+          [1, 0],
+          [1, 0],
+        ],
+        [
+          [2, 0],
+          [2, 0],
+        ],
+      ]);
+      element.dispatchEvent(eventAtPixel("mouseup", overEmptyRows, { button: 2 }));
+    });
+
+    it("recomputes every row after the buffer changes under the drag", async () => {
+      useLines(8);
+      element.dispatchEvent(eventAt("mousedown", { row: 0, column: 2 }, { button: 2 }));
+      element.dispatchEvent(eventAt("mousemove", { row: 3, column: 6 }, { button: 2 }));
+      await waitFrames(1);
+
+      // The edit drifts row 1's selection marker right by two columns, so the
+      // final assertion is meaningful only if the next frame rewrites it.
+      editor.setTextInBufferRange(
+        [
+          [1, 0],
+          [1, 0],
+        ],
+        "XX",
+      );
+      component.updateSync();
+      expect(mainModule.boxCache).toBeNull();
+
+      element.dispatchEvent(eventAt("mousemove", { row: 4, column: 6 }, { button: 2 }));
+      expect(editor.getSelectedBufferRanges()).toEqual([
+        [
+          [0, 2],
+          [0, 6],
+        ],
+        [
+          [1, 2],
+          [1, 6],
+        ],
+        [
+          [2, 2],
+          [2, 6],
+        ],
+        [
+          [3, 2],
+          [3, 6],
+        ],
+        [
+          [4, 2],
+          [4, 6],
+        ],
+      ]);
+      element.dispatchEvent(eventAt("mouseup", { row: 4, column: 6 }, { button: 2 }));
+    });
+
+    it("rebuilds the box after something else consolidates its selections", async () => {
+      useLines(8);
+      element.dispatchEvent(eventAt("mousedown", { row: 0, column: 2 }, { button: 2 }));
+      element.dispatchEvent(eventAt("mousemove", { row: 3, column: 6 }, { button: 2 }));
+      expect(editor.getSelections().length).toBe(4);
+      await waitFrames(1);
+
+      // The escape keystroke's path: everything but the last selection dies.
+      editor.consolidateSelections();
+      expect(mainModule.boxCache).toBeNull();
+
+      element.dispatchEvent(eventAt("mousemove", { row: 4, column: 6 }, { button: 2 }));
+      expect(editor.getSelectedBufferRanges()).toEqual([
+        [
+          [0, 2],
+          [0, 6],
+        ],
+        [
+          [1, 2],
+          [1, 6],
+        ],
+        [
+          [2, 2],
+          [2, 6],
+        ],
+        [
+          [3, 2],
+          [3, 6],
+        ],
+        [
+          [4, 2],
+          [4, 6],
+        ],
+      ]);
+      element.dispatchEvent(eventAt("mouseup", { row: 4, column: 6 }, { button: 2 }));
+    });
+
+    it("keeps a leftward box reversed while it grows", async () => {
+      useLines(8);
+      element.dispatchEvent(eventAt("mousedown", { row: 0, column: 6 }, { button: 2 }));
+      element.dispatchEvent(eventAt("mousemove", { row: 3, column: 2 }, { button: 2 }));
+      await waitFrames(1);
+      element.dispatchEvent(eventAt("mousemove", { row: 5, column: 2 }, { button: 2 }));
+
+      expect(editor.getSelections().length).toBe(6);
+      expect(editor.getSelections().every((selection) => selection.isReversed())).toBe(true);
+      expect(editor.getSelectedBufferRanges()).toEqual([
+        [
+          [0, 2],
+          [0, 6],
+        ],
+        [
+          [1, 2],
+          [1, 6],
+        ],
+        [
+          [2, 2],
+          [2, 6],
+        ],
+        [
+          [3, 2],
+          [3, 6],
+        ],
+        [
+          [4, 2],
+          [4, 6],
+        ],
+        [
+          [5, 2],
+          [5, 6],
+        ],
+      ]);
+      element.dispatchEvent(eventAt("mouseup", { row: 5, column: 2 }, { button: 2 }));
+    });
+
+    it("selects nothing while the box is past every line's end", async () => {
+      editor.setText("01\n01\n01\n01\n");
+      component.updateSync();
+      editor.setSelectedBufferRange([
+        [0, 0],
+        [0, 0],
+      ]);
+
+      // Both corners resolve past the short lines, so every row clips to the
+      // line end without touching either box column: no row qualifies, the
+      // frame keeps the previous selections, and nothing is cached for a
+      // later frame to measure a delta against.
+      const right = 5.2 * charWidth;
+      element.dispatchEvent(
+        eventAtPixel("mousedown", { top: lineHeight / 2, left: right }, { button: 2 }),
+      );
+      for (const rows of [1.5, 2.5]) {
+        element.dispatchEvent(
+          eventAtPixel("mousemove", { top: rows * lineHeight, left: right }, { button: 2 }),
+        );
+        expect(editor.getSelectedBufferRanges()).toEqual([
+          [
+            [0, 0],
+            [0, 0],
+          ],
+        ]);
+        expect(mainModule.boxCache).toBeNull();
+        await waitFrames(1);
+      }
+      element.dispatchEvent(
+        eventAtPixel("mouseup", { top: 2.5 * lineHeight, left: right }, { button: 2 }),
+      );
+    });
+  });
+
   describe("when the editor is destroyed mid-gesture", () => {
     // Built before the editor dies: the helpers measure through the component,
     // which is gone afterwards.
@@ -404,6 +680,7 @@ describe("column-selection", () => {
     it("lets go of the editor", () => {
       startGestureAndDestroy();
       expect(mainModule.editor).toBeNull();
+      expect(mainModule.boxCache).toBeNull();
       expect(mainModule.editorDisposable).toBeNull();
       expect(mainModule.dragging).toBe(false);
       expect(mainModule.autoscrollToken).toBeNull();
