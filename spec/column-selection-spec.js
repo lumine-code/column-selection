@@ -449,6 +449,63 @@ describe("column-selection", () => {
       element.dispatchEvent(eventAt("mouseup", { row: 6, column: 6 }, { button: 2 }));
     });
 
+    it("leaves the selections it already wrote alone", async () => {
+      useLines(20);
+      element.dispatchEvent(eventAt("mousedown", { row: 1, column: 2 }, { button: 2 }));
+      element.dispatchEvent(eventAt("mousemove", { row: 4, column: 6 }, { button: 2 }));
+      await waitFrames(1);
+
+      const untouched = spyOn(editor.getSelections()[1], "setBufferRange").and.callThrough();
+      element.dispatchEvent(eventAt("mousemove", { row: 6, column: 6 }, { button: 2 }));
+
+      expect(untouched.calls.count()).toBe(0);
+      expect(editor.getSelections().length).toBe(6);
+      element.dispatchEvent(eventAt("mouseup", { row: 6, column: 6 }, { button: 2 }));
+    });
+
+    it("grows past a preserved selection without rewriting it", async () => {
+      useLines(10);
+      lumine.config.set("editor.multiCursorOnClick", true);
+      editor.setSelectedBufferRange([
+        [7, 0],
+        [7, 3],
+      ]);
+
+      element.dispatchEvent(
+        eventAt("mousedown", { row: 0, column: 1 }, { button: 2, ctrlKey: true }),
+      );
+      element.dispatchEvent(eventAt("mousemove", { row: 2, column: 5 }, { button: 2 }));
+      await waitFrames(1);
+
+      const preserved = spyOn(editor.getSelections()[0], "setBufferRange").and.callThrough();
+      element.dispatchEvent(eventAt("mousemove", { row: 3, column: 5 }, { button: 2 }));
+      expect(preserved.calls.count()).toBe(0);
+
+      element.dispatchEvent(eventAt("mouseup", { row: 3, column: 5 }, { button: 2 }));
+      expect(editor.getSelectedBufferRanges()).toEqual([
+        [
+          [7, 0],
+          [7, 3],
+        ],
+        [
+          [0, 1],
+          [0, 5],
+        ],
+        [
+          [1, 1],
+          [1, 5],
+        ],
+        [
+          [2, 1],
+          [2, 5],
+        ],
+        [
+          [3, 1],
+          [3, 5],
+        ],
+      ]);
+    });
+
     it("flips between bare cursors and real ranges at a content boundary", async () => {
       editor.setText("\n\n\n0123456789\n0123456789\n");
       component.updateSync();
