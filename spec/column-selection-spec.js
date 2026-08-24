@@ -441,10 +441,11 @@ describe("column-selection", () => {
       element.dispatchEvent(eventAt("mousemove", { row: 4, column: 6 }, { button: 2 }));
       await waitFrames(1);
 
-      const translate = spyOn(editor, "bufferRangeForScreenRange").and.callThrough();
+      const translate = spyOn(editor, "bufferRangesForScreenColumnBlock").and.callThrough();
       element.dispatchEvent(eventAt("mousemove", { row: 6, column: 6 }, { button: 2 }));
 
-      expect(translate.calls.count()).toBe(2);
+      expect(translate.calls.count()).toBe(1);
+      expect(translate.calls.argsFor(0).slice(0, 2)).toEqual([5, 6]);
       expect(editor.getSelections().length).toBe(6);
       element.dispatchEvent(eventAt("mouseup", { row: 6, column: 6 }, { button: 2 }));
     });
@@ -719,6 +720,65 @@ describe("column-selection", () => {
       element.dispatchEvent(
         eventAtPixel("mouseup", { top: 2.5 * lineHeight, left: right }, { button: 2 }),
       );
+    });
+  });
+
+  describe("walking the box in bulk", () => {
+    // The old loop, kept verbatim as the reference: one translation per row,
+    // and two more back for every row whose slice clipped to nothing.
+    function referenceRangesForBox(start, end) {
+      const zeroRanges = [];
+      const realRanges = [];
+      const reversed = end.column < start.column;
+      const ascending = start.row <= end.row;
+      for (let row = start.row; ascending ? row <= end.row : row >= end.row;) {
+        const range = editor.bufferRangeForScreenRange([
+          [row, start.column],
+          [row, end.column],
+        ]);
+        if (!range.isEmpty()) {
+          realRanges.push(range);
+        } else {
+          let pointStart = editor.screenPositionForBufferPosition(range.start);
+          let pointEnd = editor.screenPositionForBufferPosition(range.end);
+          if (reversed) [pointStart, pointEnd] = [pointEnd, pointStart];
+          if (pointStart.column === start.column || pointEnd.column === end.column) {
+            if (pointStart.column === 0 && pointEnd.column === 0) zeroRanges.push(range);
+            else realRanges.push(range);
+          }
+        }
+        ascending ? row++ : row--;
+      }
+      return realRanges.length ? realRanges : zeroRanges;
+    }
+
+    it("walks the block exactly as translating row by row would", () => {
+      editor.setText("0123456789\n01\n\n0123456789\n0123456789\n\n01\n0123456789\n");
+      editor.foldBufferRowRange(3, 4);
+      component.updateSync();
+      mainModule.editor = editor;
+
+      const boxes = [
+        [
+          { row: 0, column: 2 },
+          { row: 5, column: 6 },
+        ],
+        [
+          { row: 5, column: 6 },
+          { row: 0, column: 2 },
+        ],
+        [
+          { row: 0, column: 6 },
+          { row: 4, column: 2 },
+        ],
+        [
+          { row: 1, column: 4 },
+          { row: 2, column: 4 },
+        ],
+      ];
+      for (const [start, end] of boxes) {
+        expect(mainModule.rangesForBox(start, end)).toEqual(referenceRangesForBox(start, end));
+      }
     });
   });
 
