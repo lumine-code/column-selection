@@ -131,9 +131,9 @@ describe("column-selection", () => {
     });
 
     it("disposes every listener it registered", async () => {
-      // Three config observers, one config change, one command map, and the
-      // five window listeners.
-      expect(mainModule.disposables.disposables.size).toBe(10);
+      // Three config observers, one config change, one command map, the
+      // surface-transition observer, and the five primary-window listeners.
+      expect(mainModule.disposables.disposables.size).toBe(11);
       await lumine.packages.deactivatePackage("column-selection");
       expect(mainModule.disposables.disposables).toBeNull();
     });
