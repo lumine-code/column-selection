@@ -130,6 +130,19 @@ describe("column-selection", () => {
       expect(mainModule.editor).toBeNull();
     });
 
+    it("does not start a gesture from a mini editor", () => {
+      const miniEditor = lumine.workspace.buildTextEditor({ mini: true });
+      const miniElement = lumine.views.getView(miniEditor);
+      lumine.workspace.getElement().appendChild(miniElement);
+
+      try {
+        expect(mainModule.findEditor({ target: miniElement })).toBeNull();
+        expect(mainModule.editor).toBeNull();
+      } finally {
+        miniEditor.destroy();
+      }
+    });
+
     it("disposes every listener it registered", async () => {
       // Three config observers, one config change, one command map, the
       // surface-transition observer, and the five primary-window listeners.
