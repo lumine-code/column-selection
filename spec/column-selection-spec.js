@@ -91,7 +91,7 @@ describe("column-selection", () => {
   }
 
   // `waitForFrames` resolves on a condition; this is the "yield N frames" form,
-  // which is what the leading-edge throttle and the autoscroll loop need.
+  // which is what the drag-frame scheduler assertions need.
   async function waitFrames(count = 1) {
     let remaining = count;
     await waitForFrames(() => --remaining <= 0, {
@@ -107,17 +107,12 @@ describe("column-selection", () => {
       expect(lumine.packages.isPackageActive("column-selection")).toBe(false);
     });
 
-    it("re-arms the throttle instead of wrapping the last one", async () => {
-      // The module object outlives a deactivation, so a throttle written over
-      // the method would be the thing wrapped on the next activation.
-      const method = mainModule.selectBox;
-      const throttled = mainModule.throttledSelectBox;
-
+    it("resets the drag-frame state when reactivated", async () => {
+      mainModule.dragFramePending = true;
       await lumine.packages.deactivatePackage("column-selection");
       await lumine.packages.activatePackage(packageRoot);
-
-      expect(mainModule.selectBox).toBe(method);
-      expect(mainModule.throttledSelectBox).not.toBe(throttled);
+      expect(mainModule.dragFramePending).toBe(false);
+      expect(mainModule.dragFrameToken).toBeNull();
     });
 
     it("keeps no editor subscription after a gesture", () => {
@@ -145,14 +140,15 @@ describe("column-selection", () => {
 
     it("disposes every listener it registered", async () => {
       // Three config observers, one config change, one command map, and the
-      // five window listeners.
-      expect(mainModule.disposables.disposables.size).toBe(10);
+      // four window listeners. Per-editor scroll listeners live only for the
+      // gesture and are covered above.
+      expect(mainModule.disposables.disposables.size).toBe(9);
       await lumine.packages.deactivatePackage("column-selection");
       expect(mainModule.disposables.disposables).toBeNull();
     });
   });
 
-  describe("the autoscroll loop", () => {
+  describe("the drag frame loop", () => {
     it("stops when picker mode takes the mouse up", () => {
       // Sticky mode makes the left button start a drag, which is what puts the
       // release into the picker's `which === 1` branch -- the one path out of
@@ -185,7 +181,7 @@ describe("column-selection", () => {
       expect(scrolls.calls.count()).toBe(settled);
       // The loop owns the token and drops it on the way out, so this is what
       // says the chain ended rather than merely idling.
-      expect(mainModule.autoscrollToken).toBeNull();
+      expect(mainModule.dragFrameToken).toBeNull();
     });
 
     it("starts one loop per gesture, not one per press", () => {
@@ -194,14 +190,145 @@ describe("column-selection", () => {
       // two loops scroll at twice the speed, which grows the box faster still.
       mainModule.toggleSticky();
       element.dispatchEvent(eventAt("mousedown", { row: 0, column: 2 }, { button: 0 }));
-      const token = mainModule.autoscrollToken;
+      element.dispatchEvent(eventAt("mousemove", { row: 0, column: 3 }, { button: 0 }));
+      const token = mainModule.dragFrameToken;
       expect(token).toBeTruthy();
 
       element.dispatchEvent(eventAt("mousedown", { row: 0, column: 3 }, { button: 2 }));
-      expect(mainModule.autoscrollToken).toBe(token);
+      expect(mainModule.dragFrameToken).toBe(token);
 
       element.dispatchEvent(eventAt("mouseup", { row: 0, column: 3 }, { button: 2 }));
-      expect(mainModule.autoscrollToken).toBeNull();
+      expect(mainModule.dragFrameToken).toBeNull();
+    });
+
+    it("coalesces moves and resolves the latest pointer after autoscroll", async () => {
+      const firstMove = eventAt("mousemove", { row: 1, column: 4 }, { button: 2 });
+      const lastMove = eventAt("mousemove", { row: 2, column: 6 }, { button: 2 });
+      const release = eventAt("mouseup", { row: 2, column: 6 }, { button: 2 });
+      element.dispatchEvent(eventAt("mousedown", { row: 0, column: 2 }, { button: 2 }));
+      await waitFrames(1);
+
+      const calls = [];
+      const scroll = spyOn(component, "autoscrollOnMouseDrag").and.callFake((event) => {
+        calls.push(["scroll", event]);
+        return true;
+      });
+      const select = spyOn(mainModule, "selectBox").and.callFake((event) => {
+        calls.push(["select", event]);
+      });
+      spyOn(component, "updateSync").and.callFake(() => {
+        calls.push(["update"]);
+      });
+
+      element.dispatchEvent(firstMove);
+      element.dispatchEvent(lastMove);
+      await waitFrames(1);
+
+      expect(scroll.calls.count()).toBe(1);
+      expect(select.calls.count()).toBe(1);
+      const scrollIndex = calls.findIndex(([name]) => name === "scroll");
+      expect(calls.slice(scrollIndex)).toEqual([
+        ["scroll", lastMove],
+        ["select", lastMove],
+        ["update"],
+      ]);
+      element.dispatchEvent(release);
+    });
+
+    it("does not resolve a stationary pointer while the viewport stands still", async () => {
+      const move = eventAt("mousemove", { row: 2, column: 6 }, { button: 2 });
+      const release = eventAt("mouseup", { row: 2, column: 6 }, { button: 2 });
+      element.dispatchEvent(eventAt("mousedown", { row: 0, column: 2 }, { button: 2 }));
+      const scroll = spyOn(component, "autoscrollOnMouseDrag").and.returnValue(false);
+      const select = spyOn(mainModule, "selectBox").and.callThrough();
+
+      element.dispatchEvent(move);
+      await waitFrames(1);
+      expect(select.calls.count()).toBe(1);
+      expect(mainModule.dragFrameToken).toBeNull();
+
+      select.calls.reset();
+      const settledScrolls = scroll.calls.count();
+      await waitFrames(3);
+      expect(select.calls.count()).toBe(0);
+      expect(scroll.calls.count()).toBe(settledScrolls);
+      element.dispatchEvent(release);
+    });
+
+    it("keeps scheduling only while autoscroll advances", async () => {
+      const move = eventAt("mousemove", { row: 2, column: 6 }, { button: 2 });
+      const release = eventAt("mouseup", { row: 2, column: 6 }, { button: 2 });
+      element.dispatchEvent(eventAt("mousedown", { row: 0, column: 2 }, { button: 2 }));
+      const scroll = spyOn(component, "autoscrollOnMouseDrag").and.returnValues(true, true, false);
+      const select = spyOn(mainModule, "selectBox");
+
+      element.dispatchEvent(move);
+      await waitFrames(3);
+
+      expect(scroll.calls.count()).toBe(3);
+      expect(select.calls.count()).toBe(2);
+      expect(mainModule.dragFrameToken).toBeNull();
+      element.dispatchEvent(release);
+    });
+
+    it("resolves an externally scrolled viewport without another mousemove", async () => {
+      useLines(200);
+      const move = eventAt("mousemove", { row: 2, column: 6 }, { button: 2 });
+      const release = eventAt("mouseup", { row: 2, column: 6 }, { button: 2 });
+      element.dispatchEvent(eventAt("mousedown", { row: 0, column: 2 }, { button: 2 }));
+      spyOn(component, "autoscrollOnMouseDrag").and.returnValue(false);
+      const select = spyOn(mainModule, "selectBox").and.callThrough();
+
+      element.dispatchEvent(move);
+      await waitFrames(1);
+      select.calls.reset();
+
+      component.setScrollTop(3 * lineHeight);
+      component.updateSync();
+      await waitFrames(1);
+
+      expect(select.calls.count()).toBe(1);
+      expect(mainModule.mouseEnd.row).toBe(5);
+      element.dispatchEvent(release);
+    });
+
+    it("does not run a queued drag frame after picker mode takes over", async () => {
+      const move = eventAt("mousemove", { row: 2, column: 6 }, { button: 0 });
+      const release = eventAt("mouseup", { row: 2, column: 6 }, { button: 0 });
+      mainModule.toggleSticky();
+      element.dispatchEvent(eventAt("mousedown", { row: 0, column: 2 }, { button: 0 }));
+      const scroll = spyOn(component, "autoscrollOnMouseDrag");
+      const select = spyOn(mainModule, "selectBox");
+
+      element.dispatchEvent(move);
+      expect(mainModule.dragFrameToken).toBeTruthy();
+      mainModule.togglePicker();
+      await waitFrames(2);
+      element.dispatchEvent(release);
+
+      expect(scroll).not.toHaveBeenCalled();
+      expect(select).not.toHaveBeenCalled();
+      expect(mainModule.dragFrameToken).toBeNull();
+      expect(mainModule.dragFramePending).toBe(false);
+    });
+
+    it("flushes only the latest queued move when mouseup beats the frame", async () => {
+      const firstMove = eventAt("mousemove", { row: 1, column: 4 }, { button: 2 });
+      const lastMove = eventAt("mousemove", { row: 2, column: 6 }, { button: 2 });
+      const release = eventAt("mouseup", { row: 2, column: 6 }, { button: 2 });
+      element.dispatchEvent(eventAt("mousedown", { row: 0, column: 2 }, { button: 2 }));
+      const scroll = spyOn(component, "autoscrollOnMouseDrag").and.returnValue(false);
+      const select = spyOn(mainModule, "selectBox");
+
+      element.dispatchEvent(firstMove);
+      element.dispatchEvent(lastMove);
+      element.dispatchEvent(release);
+      await waitFrames(1);
+
+      expect(scroll.calls.count()).toBe(1);
+      expect(select.calls.count()).toBe(1);
+      expect(select.calls.argsFor(0)).toEqual([lastMove]);
+      expect(mainModule.dragFrameToken).toBeNull();
     });
   });
 
@@ -252,7 +379,7 @@ describe("column-selection", () => {
       ]);
     });
 
-    it("merges a preserved selection the box grows into", () => {
+    it("merges a preserved selection the box grows into", async () => {
       useLines(6);
       lumine.config.set("editor.multiCursorOnClick", true);
       editor.setSelectedBufferRange([
@@ -264,6 +391,7 @@ describe("column-selection", () => {
         eventAt("mousedown", { row: 0, column: 2 }, { button: 2, ctrlKey: true }),
       );
       element.dispatchEvent(eventAt("mousemove", { row: 3, column: 6 }, { button: 2 }));
+      await waitFrames(1);
 
       // Four box rows plus the selection the gesture was told to keep.
       expect(editor.getSelections().length).toBe(5);
@@ -345,6 +473,61 @@ describe("column-selection", () => {
         ],
       ]);
     });
+
+    it("keeps the box synchronized through diagonal autoscroll into scroll-past-end", async () => {
+      useLines(200);
+      editor.update({ scrollPastEnd: true });
+      component.updateSync();
+      const lastRow = editor.getLastScreenRow();
+      component.setScrollTop(component.getMaxScrollTop() - 4 * lineHeight);
+      component.updateSync();
+      expect(component.getContentHeight() - component.getScrollTop()).toBeLessThan(
+        component.getScrollContainerClientHeight(),
+      );
+
+      element.dispatchEvent(eventAt("mousedown", { row: lastRow - 6, column: 2 }, { button: 2 }));
+      const rect = component.refs.scrollContainer.getBoundingClientRect();
+      window.dispatchEvent(
+        new MouseEvent("mousemove", {
+          bubbles: true,
+          clientX: rect.right + 80,
+          clientY: rect.bottom + 80,
+          button: 2,
+          buttons: 2,
+        }),
+      );
+      await waitFrames(1);
+
+      expect(component.getScrollTop()).toBe(component.getMaxScrollTop());
+      expect(mainModule.mouseEnd.row).toBe(lastRow);
+
+      const resolve = spyOn(mainModule, "screenPositionForMouseEvent").and.callThrough();
+      await waitFrames(3);
+      expect(resolve.calls.count()).toBe(0);
+      expect(mainModule.dragFrameToken).toBeNull();
+
+      const beforeReturn = component.getScrollTop();
+      window.dispatchEvent(
+        new MouseEvent("mousemove", {
+          bubbles: true,
+          clientX: rect.right - 100,
+          clientY: rect.bottom - 200,
+          button: 2,
+          buttons: 2,
+        }),
+      );
+      await waitFrames(1);
+      expect(component.getScrollTop()).toBe(beforeReturn);
+      expect(mainModule.mouseEnd.row).toBe(lastRow);
+      window.dispatchEvent(
+        new MouseEvent("mouseup", {
+          bubbles: true,
+          clientX: rect.right - 100,
+          clientY: rect.bottom - 200,
+          button: 2,
+        }),
+      );
+    });
   });
 
   describe("folds", () => {
@@ -403,10 +586,8 @@ describe("column-selection", () => {
   });
 
   describe("reusing the previous frame's box", () => {
-    // The autoscroll loop is stubbed inert so nothing scrolls between the
-    // scripted moves, which is what makes the translation counts exact. The
-    // throttle is leading-edge, so each dispatched move runs synchronously and
-    // a frame is yielded before the next one re-arms it.
+    // Autoscroll is stubbed inert so nothing moves the viewport between the
+    // scripted frames, which is what makes the translation counts exact.
     beforeEach(() => {
       spyOn(component, "autoscrollOnMouseDrag");
     });
@@ -426,10 +607,10 @@ describe("column-selection", () => {
       ];
       for (const leg of legs) {
         element.dispatchEvent(eventAt("mousemove", leg, { button: 2 }));
+        await waitFrames(1);
         // The oracle knows nothing about the cache, which is the point.
         const expected = mainModule.rangesForBox(mainModule.mouseStart, mainModule.mouseEnd);
         expect(editor.getSelectedBufferRanges()).toEqual(expected);
-        await waitFrames(1);
       }
 
       expect(editor.getSelections().every((selection) => selection.isReversed())).toBe(true);
@@ -456,6 +637,7 @@ describe("column-selection", () => {
 
       const translate = spyOn(editor, "bufferRangesForScreenColumnBlock").and.callThrough();
       element.dispatchEvent(eventAt("mousemove", { row: 6, column: 6 }, { button: 2 }));
+      await waitFrames(1);
 
       expect(translate.calls.count()).toBe(1);
       expect(translate.calls.argsFor(0).slice(0, 2)).toEqual([5, 6]);
@@ -471,6 +653,7 @@ describe("column-selection", () => {
 
       const untouched = spyOn(editor.getSelections()[1], "setBufferRange").and.callThrough();
       element.dispatchEvent(eventAt("mousemove", { row: 6, column: 6 }, { button: 2 }));
+      await waitFrames(1);
 
       expect(untouched.calls.count()).toBe(0);
       expect(editor.getSelections().length).toBe(6);
@@ -493,6 +676,7 @@ describe("column-selection", () => {
 
       const preserved = spyOn(editor.getSelections()[0], "setBufferRange").and.callThrough();
       element.dispatchEvent(eventAt("mousemove", { row: 3, column: 5 }, { button: 2 }));
+      await waitFrames(1);
       expect(preserved.calls.count()).toBe(0);
 
       element.dispatchEvent(eventAt("mouseup", { row: 3, column: 5 }, { button: 2 }));
@@ -532,6 +716,7 @@ describe("column-selection", () => {
       );
       const overEmptyRows = { top: 2.5 * lineHeight, left: 6.2 * charWidth };
       element.dispatchEvent(eventAtPixel("mousemove", overEmptyRows, { button: 2 }));
+      await waitFrames(1);
 
       expect(editor.getSelectedBufferRanges()).toEqual([
         [
@@ -550,10 +735,10 @@ describe("column-selection", () => {
 
       // One row further sits real text: the bucket flips and the bare cursors
       // retroactively drop out, which only the full walk decides correctly.
-      await waitFrames(1);
       element.dispatchEvent(
         eventAt("mousemove", { row: 3, column: 6, offset: 0.2 }, { button: 2 }),
       );
+      await waitFrames(1);
       expect(editor.getSelectedBufferRanges()).toEqual([
         [
           [3, 0],
@@ -563,8 +748,8 @@ describe("column-selection", () => {
 
       // And back: trimming the only kept row empties the cache, and the rows
       // the walk discarded on the way out become the box again.
-      await waitFrames(1);
       element.dispatchEvent(eventAtPixel("mousemove", overEmptyRows, { button: 2 }));
+      await waitFrames(1);
       expect(editor.getSelectedBufferRanges()).toEqual([
         [
           [0, 0],
@@ -601,6 +786,7 @@ describe("column-selection", () => {
       expect(mainModule.boxCache).toBeNull();
 
       element.dispatchEvent(eventAt("mousemove", { row: 4, column: 6 }, { button: 2 }));
+      await waitFrames(1);
       expect(editor.getSelectedBufferRanges()).toEqual([
         [
           [0, 2],
@@ -630,14 +816,15 @@ describe("column-selection", () => {
       useLines(8);
       element.dispatchEvent(eventAt("mousedown", { row: 0, column: 2 }, { button: 2 }));
       element.dispatchEvent(eventAt("mousemove", { row: 3, column: 6 }, { button: 2 }));
-      expect(editor.getSelections().length).toBe(4);
       await waitFrames(1);
+      expect(editor.getSelections().length).toBe(4);
 
       // The escape keystroke's path: everything but the last selection dies.
       editor.consolidateSelections();
       expect(mainModule.boxCache).toBeNull();
 
       element.dispatchEvent(eventAt("mousemove", { row: 4, column: 6 }, { button: 2 }));
+      await waitFrames(1);
       expect(editor.getSelectedBufferRanges()).toEqual([
         [
           [0, 2],
@@ -669,6 +856,7 @@ describe("column-selection", () => {
       element.dispatchEvent(eventAt("mousemove", { row: 3, column: 2 }, { button: 2 }));
       await waitFrames(1);
       element.dispatchEvent(eventAt("mousemove", { row: 5, column: 2 }, { button: 2 }));
+      await waitFrames(1);
 
       expect(editor.getSelections().length).toBe(6);
       expect(editor.getSelections().every((selection) => selection.isReversed())).toBe(true);
@@ -813,7 +1001,7 @@ describe("column-selection", () => {
       expect(mainModule.boxCache).toBeNull();
       expect(mainModule.editorDisposable).toBeNull();
       expect(mainModule.dragging).toBe(false);
-      expect(mainModule.autoscrollToken).toBeNull();
+      expect(mainModule.dragFrameToken).toBeNull();
     });
 
     it("leaves the editor's own teardown to finish", () => {
