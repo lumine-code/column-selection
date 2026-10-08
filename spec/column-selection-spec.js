@@ -142,9 +142,11 @@ describe("column-selection", () => {
       // Three config observers, one config change, one command map, and the
       // four window listeners. Per-editor scroll listeners live only for the
       // gesture and are covered above.
-      expect(mainModule.disposables.disposables.size).toBe(9);
+      const owner = mainModule.disposables;
+      expect(owner.disposables.size).toBe(9);
       await lumine.packages.deactivatePackage("column-selection");
-      expect(mainModule.disposables.disposables).toBeNull();
+      expect(owner.disposables).toBeNull();
+      expect(mainModule.disposables).toBeNull();
     });
   });
 
