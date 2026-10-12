@@ -139,12 +139,15 @@ describe("column-selection", () => {
     });
 
     it("disposes every listener it registered", async () => {
-      // Three config observers, one config change, one command map, and the
-      // four window listeners. Per-editor scroll listeners live only for the
-      // gesture and are covered above.
       const owner = mainModule.disposables;
-      expect(owner.disposables.size).toBe(9);
+      const removed = spyOn(window, "removeEventListener").and.callThrough();
       await lumine.packages.deactivatePackage("column-selection");
+      for (const type of ["mousedown", "mouseup", "mousemove", "contextmenu"])
+        expect(
+          removed.calls
+            .allArgs()
+            .some((args) => args[0] === type && typeof args[1] === "function" && args[2] === true),
+        ).toBeTrue();
       expect(owner.disposables).toBeNull();
       expect(mainModule.disposables).toBeNull();
     });

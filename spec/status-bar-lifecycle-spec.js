@@ -1,3 +1,4 @@
+const windowService = require("./helpers/window-service");
 describe("column-selection status-bar connection lifetime", () => {
   let main, hub, consumer, StatusBarView, bars, providers;
   const widget = (bar) =>
@@ -12,7 +13,7 @@ describe("column-selection status-bar connection lifetime", () => {
     main.deactivateStatusBar();
     StatusBarView = lumine.packages.getActivePackage("status-bar").mainModule.statusBar.constructor;
     hub = new lumine.packages.serviceHub.constructor();
-    consumer = hub.consume("status-bar", "^1.0.0", (bar) => main.consumeStatusBar(bar));
+    consumer = hub.consume("status-bar", "^2.0.0", (service) => main.consumeStatusBar(service));
     bars = [];
     providers = [];
   });
@@ -31,7 +32,7 @@ describe("column-selection status-bar connection lifetime", () => {
       bars.push(bar);
       jasmine.attachToDOM(bar.element);
     }
-    const provider = hub.provide("status-bar", "1.0.0", bar);
+    const provider = hub.provide("status-bar", "2.0.0", windowService(bar));
     providers.push(provider);
     return { bar, provider, element: widget(bar) };
   }
@@ -105,7 +106,7 @@ describe("column-selection status-bar connection lifetime", () => {
       main.toggleSticky();
       return tile;
     });
-    const lease = main.consumeStatusBar(bar);
+    const lease = main.consumeStatusBar(windowService(bar));
     expect(widget(bar).querySelector(".icon").classList.contains("sticky")).toBe(true);
     lease.dispose();
   });
@@ -121,7 +122,7 @@ describe("column-selection status-bar connection lifetime", () => {
       main.deactivate();
       return tile;
     });
-    const lease = main.consumeStatusBar(bar);
+    const lease = main.consumeStatusBar(windowService(bar));
     expect(bar.getRightTiles().length).toBe(0);
     expect(lumine.tooltips.findTooltips(item)).toEqual([]);
     lease.dispose();
@@ -134,10 +135,10 @@ describe("column-selection status-bar connection lifetime", () => {
       item = options.item;
       throw new Error("Tile creation failed");
     });
-    expect(() => main.consumeStatusBar(bar)).toThrowError("Tile creation failed");
+    expect(() => main.consumeStatusBar(windowService(bar))).toThrowError("Tile creation failed");
     expect(lumine.tooltips.findTooltips(item)).toEqual([]);
     add.and.callThrough();
-    const lease = main.consumeStatusBar(bar);
+    const lease = main.consumeStatusBar(windowService(bar));
     expect(bar.getRightTiles().length).toBe(1);
     lease.dispose();
     expect(bar.getRightTiles().length).toBe(0);
