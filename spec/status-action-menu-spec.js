@@ -20,8 +20,11 @@ describe("column-selection status actions", () => {
     ]);
     expect(commands().map((item) => item.mouseBindingLabel)).toEqual(["LMB", "MMB"]);
     const [tooltip] = lumine.tooltips.findTooltips(element);
-    expect(tooltip.options.keyBindingCommand).toBeUndefined();
+    expect(tooltip.options.keyBindingCommand).toBe("column-selection:sticky");
+    expect(tooltip.options.keyBindingExtra).toBeUndefined();
     expect(tooltip.getTitle()).toContain("Click to toggle sticky mode.");
+    expect(tooltip.getTitle()).not.toContain("LMB");
+    expect(tooltip.getTitle()).not.toContain("MMB");
     element.dispatchEvent(new MouseEvent("mouseup", { button: 2 }));
     expect(main.stickyFlag).toBe(false);
     expect(main.pickerFlag).toBe(false);
@@ -38,6 +41,15 @@ describe("column-selection status actions", () => {
     expect(lumine.contextMenu.templateForElement(element)).toEqual([]);
     element.dispatchEvent(new MouseEvent("mouseup", { button: 0 }));
     expect(main.stickyFlag).toBe(false);
+  });
+
+  it("resolves the primary keyboard shortcut from the current editor", async () => {
+    const [tooltip] = lumine.tooltips.findTooltips(resources.widget);
+    expect(tooltip.options.keyBindingTarget()).toBeNull();
+    const editor = await lumine.workspace.open();
+    expect(tooltip.options.keyBindingTarget()).toBe(editor.getElement());
+    expect(tooltip.getTitle()).toContain("keystroke");
+    expect(tooltip.getTitle()).not.toContain("MMB");
   });
 
   it("keeps status controls reachable while a picker corner is pending", async () => {
