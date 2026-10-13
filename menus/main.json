@@ -17,6 +17,24 @@
           ]
         }
       ]
+    },
+    {
+      "label": "Selection",
+      "submenu": [
+        {
+          "label": "Column Selection",
+          "submenu": [
+            {
+              "label": "Toggle Sticky Mode",
+              "command": "column-selection:sticky"
+            },
+            {
+              "label": "Toggle Picker Mode",
+              "command": "column-selection:picker"
+            }
+          ]
+        }
+      ]
     }
   ]
 }
