@@ -18,7 +18,7 @@ describe("column-selection status actions", () => {
       "column-selection:sticky",
       "column-selection:picker",
     ]);
-    expect(commands().map((item) => item.mouseBindingLabel)).toEqual(["LMB", "MMB"]);
+    const dispatch = spyOn(lumine.commands, "dispatch").and.callThrough();
     const [tooltip] = lumine.tooltips.findTooltips(element);
     expect(tooltip.options.keyBindingCommand).toBe("column-selection:sticky");
     expect(tooltip.options.keyBindingExtra).toBeUndefined();
@@ -28,8 +28,12 @@ describe("column-selection status actions", () => {
     element.dispatchEvent(new MouseEvent("mouseup", { button: 2 }));
     expect(main.stickyFlag).toBe(false);
     expect(main.pickerFlag).toBe(false);
+    expect(dispatch).not.toHaveBeenCalled();
     element.dispatchEvent(new MouseEvent("mouseup", { button: 0 }));
     element.dispatchEvent(new MouseEvent("mouseup", { button: 1 }));
+    expect(dispatch.calls.allArgs().map(([, command]) => command)).toEqual(
+      commands().map((item) => item.command),
+    );
     expect(commands().map((item) => item.checked)).toEqual([true, true]);
     expect(tooltip.getTitle()).toContain("Sticky on, picker on.");
     lumine.commands.dispatch(element, "column-selection:picker");
