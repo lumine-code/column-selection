@@ -1,4 +1,9 @@
 describe("column-selection status actions", () => {
+  const { createRequire } = require("node:module");
+  const coreRequire = createRequire(
+    require("node:path").join(lumine.application.getResourcePath(), "package.json"),
+  );
+  const { humanizeKeystroke } = coreRequire("@lumine-code/underscore-plus");
   let main, resources, window;
   const commands = () => lumine.contextMenu.templateForElement(resources.widget);
   beforeEach(async () => {
@@ -54,6 +59,43 @@ describe("column-selection status actions", () => {
     expect(tooltip.options.keyBindingTarget()).toBe(editor.getElement());
     expect(tooltip.getTitle()).toContain("keystroke");
     expect(tooltip.getTitle()).not.toContain("MMB");
+  });
+
+  it("shows both editor shortcuts in the menu only while an editor is available", async () => {
+    expect(commands().map((item) => item.keyBindingLabel)).toEqual(["", ""]);
+    const editor = await lumine.workspace.open();
+    expect(commands().map((item) => item.keyBindingLabel)).toEqual([
+      humanizeKeystroke("alt-q"),
+      humanizeKeystroke("ctrl-q"),
+    ]);
+    expect(
+      lumine.contextMenu
+        .templateForElement(resources.widget.querySelector(".icon"))
+        .map((item) => item.keyBindingLabel),
+    ).toEqual([humanizeKeystroke("alt-q"), humanizeKeystroke("ctrl-q")]);
+    await lumine.workspace.getActivePane().destroyItem(editor, true);
+    expect(commands().map((item) => item.keyBindingLabel)).toEqual(["", ""]);
+  });
+
+  it("uses the invoking window's editor rather than the other window's editor", async () => {
+    jasmine.useRealClock();
+    await lumine.workspace.open();
+    const extra = await lumine.workspace.openEditorWindow({ show: false });
+    const remote = main.createStatusBarResources({ addRightTile: () => ({ destroy() {} }) }, extra);
+    extra.getElement().appendChild(remote.widget);
+    const labels = () =>
+      lumine.contextMenu.templateForElement(remote.widget).map((item) => item.keyBindingLabel);
+    try {
+      expect(labels()).toEqual(["", ""]);
+      const editor = lumine.workspace.buildTextEditor();
+      extra.getEditorContainer().getActivePane().activateItem(editor);
+      expect(labels()).toEqual([humanizeKeystroke("alt-q"), humanizeKeystroke("ctrl-q")]);
+      lumine.commands.dispatch(remote.widget, "column-selection:picker");
+      expect(main.pickerFlag).toBeTrue();
+    } finally {
+      main.destroyStatusBarConnection(remote);
+      await lumine.workspace.discardEditorWindows();
+    }
   });
 
   it("keeps status controls reachable while a picker corner is pending", async () => {
