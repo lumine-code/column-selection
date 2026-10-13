@@ -10,6 +10,8 @@ Create rectangular selections across lines by dragging.
 - **Edge scrolling**: continue selecting while scrolling near editor edges.
 - **Selection preservation**: retain existing selections when adding a new column.
 
+![Select a rectangular column across several lines.](.github/demo.png)
+
 ## Installation
 
 To install `column-selection` search for it in the Install pane of the Lumine settings, or run the command `lumine --install lumine-code/column-selection`.

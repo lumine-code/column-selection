@@ -1,0 +1,17 @@
+{
+  "title": "column-selection",
+  "description": "Select a rectangular column across several lines.",
+  "recordedOn": "2026-10-13",
+  "sourceRevision": "046dc639b69998dae5d27c2dbadf9581fae486ee",
+  "mode": "normal",
+  "fontSettings": "default",
+  "themeSourceRevision": "6564a9e21899b5541e9c8f8006f9be6d6d72e6ad",
+  "images": [
+    {
+      "file": "demo.png",
+      "label": "Select a rectangular column across several lines.",
+      "width": 1100,
+      "height": 390
+    }
+  ]
+}
