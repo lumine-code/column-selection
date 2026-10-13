@@ -32,7 +32,9 @@
               "label": "Toggle Picker Mode",
               "command": "column-selection:picker"
             }
-          ]
+          ],
+          "group": "structure",
+          "order": 30
         }
       ]
     }
