@@ -18,12 +18,17 @@ describe("column-selection status actions", () => {
       "column-selection:sticky",
       "column-selection:picker",
     ]);
+    expect(commands().map((item) => item.mouseBindingLabel)).toEqual(["LMB", "MMB"]);
+    const [tooltip] = lumine.tooltips.findTooltips(element);
+    expect(tooltip.options.keyBindingCommand).toBeUndefined();
+    expect(tooltip.getTitle()).toContain("Click to toggle sticky mode.");
     element.dispatchEvent(new MouseEvent("mouseup", { button: 2 }));
     expect(main.stickyFlag).toBe(false);
     expect(main.pickerFlag).toBe(false);
     element.dispatchEvent(new MouseEvent("mouseup", { button: 0 }));
     element.dispatchEvent(new MouseEvent("mouseup", { button: 1 }));
     expect(commands().map((item) => item.checked)).toEqual([true, true]);
+    expect(tooltip.getTitle()).toContain("Sticky on, picker on.");
     lumine.commands.dispatch(element, "column-selection:picker");
     expect(commands().map((item) => item.checked)).toEqual([true, false]);
   });

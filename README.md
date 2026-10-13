@@ -25,7 +25,7 @@ Commands available in `lumine-workspace`:
 
 Sticky mode applies column selection to mouse gestures until the mode is disabled. Picker mode uses the first click as one corner of the selection and the second click as the opposite corner.
 
-The status bar icon opens a menu with separate Sticky Mode and Picker Mode switches. Left-click toggles sticky mode, and middle-click toggles picker mode.
+The status bar icon opens a menu with separate Sticky Mode and Picker Mode switches and lists their mouse shortcuts. Its tooltip shows the current modes and the primary click action.
 
 ## Customization
 
