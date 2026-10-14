@@ -6,16 +6,35 @@ describe("column-selection status actions", () => {
   const { humanizeKeystroke } = coreRequire("@lumine-code/underscore-plus");
   let main, resources, window;
   const commands = () => lumine.contextMenu.templateForElement(resources.widget);
+  const shortcuts = () => [humanizeKeystroke("alt-q"), humanizeKeystroke("ctrl-q")];
+  const popupLabels = (target) => {
+    const popup = lumine.contextMenu.show(target, lumine.contextMenu.templateForElement(target));
+    try {
+      return Array.from(
+        popup.element.querySelectorAll(".menu-item-keystroke"),
+        (element) => element.textContent,
+      );
+    } finally {
+      popup.close({ cancelled: true, restoreFocus: false });
+    }
+  };
   beforeEach(async () => {
+    jasmine.useRealClock();
     window = lumine.workspace.getMainWindow();
     jasmine.attachToDOM(window.getElement());
+    await lumine.packages.activatePackage("status-bar");
     main = (await lumine.packages.activatePackage("column-selection")).mainModule;
-    resources = main.createStatusBarResources({ addRightTile: () => ({ destroy() {} }) }, window);
-    window.getElement().appendChild(resources.widget);
+    await flushMicrotasks();
+    resources = Array.from(main.statusBarConnections.values()).find(
+      (connection) => connection.context.window === window,
+    );
+    expect(resources.widget.closest("status-bar")).not.toBeNull();
+    expect(resources.widget.isConnected).toBeTrue();
   });
   afterEach(async () => {
     main.destroyStatusBarConnection(resources);
     await lumine.packages.deactivatePackage("column-selection");
+    await lumine.packages.deactivatePackage("status-bar");
   });
   it("offers independent checked actions and leaves right-click free", () => {
     const element = resources.widget;
@@ -52,48 +71,151 @@ describe("column-selection status actions", () => {
     expect(main.stickyFlag).toBe(false);
   });
 
-  it("resolves the primary keyboard shortcut from the current editor", async () => {
+  it("shows the primary global shortcut before an editor is opened", async () => {
     const [tooltip] = lumine.tooltips.findTooltips(resources.widget);
-    expect(tooltip.options.keyBindingTarget()).toBeNull();
-    const editor = await lumine.workspace.open();
-    expect(tooltip.options.keyBindingTarget()).toBe(editor.getElement());
+    expect(tooltip.options.keyBindingTarget).toBe(window.getElement());
+    expect(tooltip.getTitle()).toContain(humanizeKeystroke("alt-q"));
+    await lumine.workspace.open();
+    expect(tooltip.options.keyBindingTarget).toBe(window.getElement());
     expect(tooltip.getTitle()).toContain("keystroke");
     expect(tooltip.getTitle()).not.toContain("MMB");
   });
 
-  it("shows both editor shortcuts in the menu only while an editor is available", async () => {
-    expect(commands().map((item) => item.keyBindingLabel)).toEqual(["", ""]);
+  it("renders both global shortcuts in the real status popup with or without an editor", async () => {
+    expect(commands().map((item) => item.keyBindingLabel)).toEqual(shortcuts());
+    expect(popupLabels(resources.widget)).toEqual(shortcuts());
     const editor = await lumine.workspace.open();
-    expect(commands().map((item) => item.keyBindingLabel)).toEqual([
-      humanizeKeystroke("alt-q"),
-      humanizeKeystroke("ctrl-q"),
-    ]);
+    expect(commands().map((item) => item.keyBindingLabel)).toEqual(shortcuts());
     expect(
       lumine.contextMenu
         .templateForElement(resources.widget.querySelector(".icon"))
         .map((item) => item.keyBindingLabel),
-    ).toEqual([humanizeKeystroke("alt-q"), humanizeKeystroke("ctrl-q")]);
+    ).toEqual(shortcuts());
+    expect(popupLabels(resources.widget.querySelector(".icon"))).toEqual(shortcuts());
     await lumine.workspace.getActivePane().destroyItem(editor, true);
-    expect(commands().map((item) => item.keyBindingLabel)).toEqual(["", ""]);
+    expect(commands().map((item) => item.keyBindingLabel)).toEqual(shortcuts());
+    expect(popupLabels(resources.widget)).toEqual(shortcuts());
   });
 
-  it("uses the invoking window's editor rather than the other window's editor", async () => {
-    jasmine.useRealClock();
-    await lumine.workspace.open();
+  it("arms both global modes from the real status popup before opening an editor", async () => {
+    expect(lumine.workspace.getTextEditors()).toEqual([]);
+    for (const index of [0, 1]) {
+      const popup = lumine.contextMenu.show(resources.widget, commands());
+      popup.element.querySelectorAll('[role="menuitemcheckbox"]')[index].click();
+      expect(popup.closed).toBeTrue();
+      await flushMicrotasks();
+    }
+    expect(main.stickyFlag).toBeTrue();
+    expect(main.pickerFlag).toBeTrue();
+  });
+
+  it("dispatches each global shortcut from an empty workspace, a sidebar and a mini editor", () => {
+    const sidebar = document.createElement("button");
+    lumine.workspace.getLeftDock().getElement().appendChild(sidebar);
+    const mini = lumine.workspace.buildTextEditor({ mini: true });
+    window.getElement().appendChild(mini.getElement());
+    const sticky = spyOn(main, "toggleSticky").and.callThrough();
+    const picker = spyOn(main, "togglePicker").and.callThrough();
+    try {
+      for (const target of [window.getElement(), sidebar, mini.getElement()]) {
+        for (const [stroke, command] of [
+          ["alt-q", "column-selection:sticky"],
+          ["ctrl-q", "column-selection:picker"],
+        ]) {
+          const binding = lumine.keymaps.findKeyBindings({ keystrokes: stroke, target })[0];
+          expect(binding.selector).toBe("lumine-workspace");
+          expect(binding.command).toBe(command);
+          if (binding.command === command) lumine.commands.dispatch(target, binding.command);
+        }
+      }
+      expect(sticky).toHaveBeenCalledTimes(3);
+      expect(picker).toHaveBeenCalledTimes(3);
+      expect(main.stickyFlag).toBeTrue();
+      expect(main.pickerFlag).toBeTrue();
+    } finally {
+      mini.destroy();
+      mini.getElement().remove();
+      sidebar.remove();
+    }
+  });
+
+  it("keeps the literal global shortcuts available outside editors", () => {
+    const lookup = (keystrokes) =>
+      lumine.keymaps.findKeyBindings({ keystrokes, target: window.getElement() })[0];
+    expect(lookup("alt-q").command).toBe("column-selection:sticky");
+    expect(lookup("ctrl-q").command).toBe("column-selection:picker");
+    if (process.platform === "darwin") expect(lookup("cmd-q").command).toBe("application:quit");
+  });
+
+  it("renders both application-menu aliases when invoked from a dock instead of an editor", () => {
+    const pack = lumine.packages.getLoadedPackage("column-selection");
+    const menu = pack.menus.find(([, definition]) => definition.menu)[1].menu;
+    const dock = lumine.workspace.getLeftDock();
+    const button = document.createElement("button");
+    button.textContent = "Column Selection spec dock target";
+    dock.getElement().appendChild(button);
+    dock.show();
+    button.focus();
+    expect(document.activeElement).toBe(button);
+    try {
+      for (const contribution of menu) {
+        const popup = lumine.menu.showPopup({
+          target: button,
+          anchor: button,
+          template: contribution.submenu[0].submenu,
+        });
+        try {
+          expect(
+            Array.from(
+              popup.element.querySelectorAll(".menu-item-keystroke"),
+              (element) => element.textContent,
+            ),
+          ).toEqual(shortcuts());
+        } finally {
+          popup.close({ cancelled: true, restoreFocus: false });
+        }
+      }
+    } finally {
+      button.remove();
+      dock.hide();
+    }
+  });
+
+  it("uses each owning window's user keymap even when neither window has an editor", async () => {
     const extra = await lumine.workspace.openEditorWindow({ show: false });
-    const remote = main.createStatusBarResources({ addRightTile: () => ({ destroy() {} }) }, extra);
-    extra.getElement().appendChild(remote.widget);
+    await flushMicrotasks();
+    const remote = Array.from(main.statusBarConnections.values()).find(
+      (connection) => connection.context.window === extra,
+    );
+    expect(remote.widget.closest("status-bar")).not.toBeNull();
+    extra.getElement().classList.add("column-selection-spec-user-window");
+    const userMap = lumine.keymaps.add(
+      "column-selection-spec-user-window",
+      {
+        ".column-selection-spec-user-window": {
+          "ctrl-alt-q": "column-selection:sticky",
+          "ctrl-alt-p": "column-selection:picker",
+        },
+      },
+      100,
+    );
     const labels = () =>
       lumine.contextMenu.templateForElement(remote.widget).map((item) => item.keyBindingLabel);
     try {
-      expect(labels()).toEqual(["", ""]);
+      const expected = [humanizeKeystroke("ctrl-alt-q"), humanizeKeystroke("ctrl-alt-p")];
+      expect(labels()).toEqual(expected);
+      expect(popupLabels(remote.widget)).toEqual(expected);
+      expect(commands().map((item) => item.keyBindingLabel)).toEqual(shortcuts());
+      const [tooltip] = lumine.tooltips.findTooltips(remote.widget);
+      expect(tooltip.getTitle()).toContain(expected[0]);
       const editor = lumine.workspace.buildTextEditor();
       extra.getEditorContainer().getActivePane().activateItem(editor);
-      expect(labels()).toEqual([humanizeKeystroke("alt-q"), humanizeKeystroke("ctrl-q")]);
+      expect(labels()).toEqual(expected);
       lumine.commands.dispatch(remote.widget, "column-selection:picker");
       expect(main.pickerFlag).toBeTrue();
     } finally {
-      main.destroyStatusBarConnection(remote);
+      userMap.dispose();
+      extra.getElement().classList.remove("column-selection-spec-user-window");
       await lumine.workspace.discardEditorWindows();
     }
   });
