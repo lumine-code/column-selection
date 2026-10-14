@@ -1,0 +1,5 @@
+sample   value   window
+alpha    0.20    03
+beta     0.80    03
+gamma   -0.40    03
+delta    0.50    03
