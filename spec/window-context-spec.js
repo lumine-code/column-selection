@@ -28,4 +28,26 @@ describe("column-selection window status", () => {
     extra.getDocument().body.dispatchEvent(event);
     expect(down).toHaveBeenCalledTimes(1);
   });
+
+  it("ends an outstanding drag before its presentation window changes", async () => {
+    const main = lumine.packages.getActivePackage("column-selection").mainModule;
+    const editor = await lumine.workspace.open();
+    const extra = await lumine.workspace.detachItem(editor);
+    const frames = [];
+    spyOn(extra.getDOMWindow(), "requestAnimationFrame").and.callFake((callback) =>
+      frames.push(callback),
+    );
+    const cancel = spyOn(extra.getDOMWindow(), "cancelAnimationFrame");
+    const drag = spyOn(main, "processDragFrame");
+    main.setEditor(editor);
+    main.dragging = true;
+    main.startDragLoop();
+    await lumine.workspace.attachWindow(extra);
+    expect(cancel).toHaveBeenCalledWith(1);
+    expect(main.editor).toBeNull();
+    expect(main.dragFrameToken).toBeNull();
+    expect(main.dragging).toBeFalse();
+    frames[0]();
+    expect(drag).not.toHaveBeenCalled();
+  });
 });
