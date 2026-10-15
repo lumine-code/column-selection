@@ -110,7 +110,7 @@ describe("column-selection", () => {
     it("resets the drag-frame state when reactivated", async () => {
       mainModule.dragFramePending = true;
       await lumine.packages.deactivatePackage("column-selection");
-      await lumine.packages.activatePackage(packageRoot);
+      mainModule = (await lumine.packages.activatePackage(packageRoot)).mainModule;
       expect(mainModule.dragFramePending).toBe(false);
       expect(mainModule.dragFrameToken).toBeNull();
     });
@@ -393,7 +393,15 @@ describe("column-selection", () => {
       ]);
 
       element.dispatchEvent(
-        eventAt("mousedown", { row: 0, column: 2 }, { button: 2, ctrlKey: true }),
+        eventAt(
+          "mousedown",
+          { row: 0, column: 2 },
+          {
+            button: 2,
+            ctrlKey: process.platform !== "darwin",
+            metaKey: process.platform === "darwin",
+          },
+        ),
       );
       element.dispatchEvent(eventAt("mousemove", { row: 3, column: 6 }, { button: 2 }));
       await waitFrames(1);
@@ -674,7 +682,15 @@ describe("column-selection", () => {
       ]);
 
       element.dispatchEvent(
-        eventAt("mousedown", { row: 0, column: 1 }, { button: 2, ctrlKey: true }),
+        eventAt(
+          "mousedown",
+          { row: 0, column: 1 },
+          {
+            button: 2,
+            ctrlKey: process.platform !== "darwin",
+            metaKey: process.platform === "darwin",
+          },
+        ),
       );
       element.dispatchEvent(eventAt("mousemove", { row: 2, column: 5 }, { button: 2 }));
       await waitFrames(1);
@@ -1010,10 +1026,12 @@ describe("column-selection", () => {
     });
 
     it("leaves the editor's own teardown to finish", () => {
+      const restoreCursorLine = spyOn(editor, "decorateCursorLine").and.callThrough();
       startGestureAndDestroy();
       // `component` is nulled on the line after `did-destroy` is emitted, so a
       // handler that threw would leave it set.
       expect(editor.component).toBeNull();
+      expect(restoreCursorLine).not.toHaveBeenCalled();
     });
 
     it("survives the mouse up that follows", () => {

@@ -4,9 +4,12 @@ describe("column-selection status actions", () => {
     require("node:path").join(lumine.application.getResourcePath(), "package.json"),
   );
   const { humanizeKeystroke } = coreRequire("@lumine-code/underscore-plus");
+  const primary = process.platform === "darwin" ? "cmd" : "ctrl";
+  const stickyStroke = `${primary}-k q`;
+  const pickerStroke = `${primary}-k shift-q`;
   let main, resources, window;
   const commands = () => lumine.contextMenu.templateForElement(resources.widget);
-  const shortcuts = () => [humanizeKeystroke("alt-q"), humanizeKeystroke("ctrl-q")];
+  const shortcuts = () => [humanizeKeystroke(stickyStroke), humanizeKeystroke(pickerStroke)];
   const popupLabels = (target) => {
     const popup = lumine.contextMenu.show(target, lumine.contextMenu.templateForElement(target));
     try {
@@ -74,7 +77,7 @@ describe("column-selection status actions", () => {
   it("shows the primary global shortcut before an editor is opened", async () => {
     const [tooltip] = lumine.tooltips.findTooltips(resources.widget);
     expect(tooltip.options.keyBindingTarget).toBe(window.getElement());
-    expect(tooltip.getTitle()).toContain(humanizeKeystroke("alt-q"));
+    expect(tooltip.getTitle()).toContain(humanizeKeystroke(stickyStroke));
     await lumine.workspace.open();
     expect(tooltip.options.keyBindingTarget).toBe(window.getElement());
     expect(tooltip.getTitle()).toContain("keystroke");
@@ -119,8 +122,8 @@ describe("column-selection status actions", () => {
     try {
       for (const target of [window.getElement(), sidebar, mini.getElement()]) {
         for (const [stroke, command] of [
-          ["alt-q", "column-selection:sticky"],
-          ["ctrl-q", "column-selection:picker"],
+          [stickyStroke, "column-selection:sticky"],
+          [pickerStroke, "column-selection:picker"],
         ]) {
           const binding = lumine.keymaps.findKeyBindings({ keystrokes: stroke, target })[0];
           expect(binding.selector).toBe("lumine-workspace");
@@ -142,9 +145,9 @@ describe("column-selection status actions", () => {
   it("keeps the literal global shortcuts available outside editors", () => {
     const lookup = (keystrokes) =>
       lumine.keymaps.findKeyBindings({ keystrokes, target: window.getElement() })[0];
-    expect(lookup("alt-q").command).toBe("column-selection:sticky");
-    expect(lookup("ctrl-q").command).toBe("column-selection:picker");
-    if (process.platform === "darwin") expect(lookup("cmd-q").command).toBe("application:quit");
+    expect(lookup(stickyStroke).command).toBe("column-selection:sticky");
+    expect(lookup(pickerStroke).command).toBe("column-selection:picker");
+    expect(lookup(`${primary}-q`).command).toBe("application:quit");
   });
 
   it("renders both application-menu aliases when invoked from a dock instead of an editor", () => {

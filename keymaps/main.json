@@ -2,7 +2,7 @@
   // Both toggle global selection modes, which can be armed before clicking
   // an editor. Their shortcuts share the handlers' workspace scope.
   "lumine-workspace": {
-    "alt-q": "column-selection:sticky",
-    "ctrl-q": "column-selection:picker"
+    "cmdorctrl-k q": "column-selection:sticky",
+    "cmdorctrl-k shift-q": "column-selection:picker"
   }
 }
