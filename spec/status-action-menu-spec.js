@@ -25,6 +25,7 @@ describe("column-selection status actions", () => {
     jasmine.useRealClock();
     window = lumine.workspace.getMainWindow();
     jasmine.attachToDOM(window.getElement());
+    window.getElement().focus();
     await lumine.packages.activatePackage("status-bar");
     main = (await lumine.packages.activatePackage("column-selection")).mainModule;
     await flushMicrotasks();
@@ -96,6 +97,7 @@ describe("column-selection status actions", () => {
     ).toEqual(shortcuts());
     expect(popupLabels(resources.widget.querySelector(".icon"))).toEqual(shortcuts());
     await lumine.workspace.getActivePane().destroyItem(editor, true);
+    window.getElement().focus();
     expect(commands().map((item) => item.keyBindingLabel)).toEqual(shortcuts());
     expect(popupLabels(resources.widget)).toEqual(shortcuts());
   });
@@ -205,6 +207,7 @@ describe("column-selection status actions", () => {
     const labels = () =>
       lumine.contextMenu.templateForElement(remote.widget).map((item) => item.keyBindingLabel);
     try {
+      extra.getElement().focus();
       const expected = [humanizeKeystroke("ctrl-alt-q"), humanizeKeystroke("ctrl-alt-p")];
       expect(labels()).toEqual(expected);
       expect(popupLabels(remote.widget)).toEqual(expected);
@@ -213,6 +216,7 @@ describe("column-selection status actions", () => {
       expect(tooltip.getTitle()).toContain(expected[0]);
       const editor = lumine.workspace.buildTextEditor();
       extra.getEditorContainer().getActivePane().activateItem(editor);
+      editor.getElement().focus();
       expect(labels()).toEqual(expected);
       lumine.commands.dispatch(remote.widget, "column-selection:picker");
       expect(main.pickerFlag).toBeTrue();
