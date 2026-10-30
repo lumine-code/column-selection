@@ -89,11 +89,16 @@ describe("column-selection platform mouse modifiers", () => {
       main.togglePicker();
       send("mousedown", 0, 2);
       send("mouseup", 0, 2);
+      const invalidate = spyOn(lumine.commands, "invalidateAvailability").and.callThrough();
       const modifier = name === "darwin" ? "metaKey" : "ctrlKey";
       send("mousedown", 1, 5, { [modifier]: true });
       send("mouseup", 1, 5, { [modifier]: true });
       expect(editor.getSelectedBufferRanges()).toEqual([existing, ...box]);
       expect(main.pickerFlag).toBeFalse();
+      expect(invalidate).toHaveBeenCalledWith();
+      expect(
+        lumine.commands.getCommandState("column-selection:picker", { target: element }),
+      ).toEqual({ type: "checkbox", checked: false });
     });
   }
 
