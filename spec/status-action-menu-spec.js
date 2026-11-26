@@ -42,6 +42,9 @@ describe("column-selection status actions", () => {
   });
   it("offers independent checked actions and leaves right-click free", () => {
     const element = resources.widget;
+    expect(element.matches("button.icon-button")).toBe(true);
+    expect(element.getAttribute("aria-label")).toBe("Column Selection Sticky Mode");
+    expect(element.getAttribute("aria-pressed")).toBe("false");
     expect(commands().map((item) => item.command)).toEqual([
       "column-selection:sticky",
       "column-selection:picker",
@@ -53,16 +56,20 @@ describe("column-selection status actions", () => {
     expect(tooltip.getTitle()).toContain("Click to toggle sticky mode.");
     expect(tooltip.getTitle()).not.toContain("LMB");
     expect(tooltip.getTitle()).not.toContain("MMB");
-    element.dispatchEvent(new MouseEvent("mouseup", { button: 2 }));
+    const press = new MouseEvent("mousedown", { button: 0, cancelable: true });
+    element.dispatchEvent(press);
+    expect(press.defaultPrevented).toBe(true);
+    element.dispatchEvent(new MouseEvent("auxclick", { button: 2 }));
     expect(main.stickyFlag).toBe(false);
     expect(main.pickerFlag).toBe(false);
     expect(dispatch).not.toHaveBeenCalled();
-    element.dispatchEvent(new MouseEvent("mouseup", { button: 0 }));
-    element.dispatchEvent(new MouseEvent("mouseup", { button: 1 }));
+    element.click();
+    element.dispatchEvent(new MouseEvent("auxclick", { button: 1 }));
     expect(dispatch.calls.allArgs().map(([, command]) => command)).toEqual(
       commands().map((item) => item.command),
     );
     expect(commands().map((item) => item.checked)).toEqual([true, true]);
+    expect(element.getAttribute("aria-pressed")).toBe("true");
     expect(tooltip.getTitle()).toContain("Sticky on, picker on.");
     lumine.commands.dispatch(element, "column-selection:picker");
     expect(commands().map((item) => item.checked)).toEqual([true, false]);
@@ -71,7 +78,7 @@ describe("column-selection status actions", () => {
     const element = resources.widget;
     main.destroyStatusBarConnection(resources);
     expect(lumine.contextMenu.templateForElement(element)).toEqual([]);
-    element.dispatchEvent(new MouseEvent("mouseup", { button: 0 }));
+    element.click();
     expect(main.stickyFlag).toBe(false);
   });
 
@@ -244,7 +251,7 @@ describe("column-selection status actions", () => {
     const middle = new MouseEvent("mousedown", { button: 1, bubbles: true, cancelable: true });
     element.dispatchEvent(middle);
     expect(middle.defaultPrevented).toBe(true);
-    element.dispatchEvent(new MouseEvent("mouseup", { button: 1, bubbles: true }));
+    element.dispatchEvent(new MouseEvent("auxclick", { button: 1, bubbles: true }));
     expect(main.pickerFlag).toBe(false);
   });
 });
