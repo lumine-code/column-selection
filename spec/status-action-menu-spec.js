@@ -42,7 +42,7 @@ describe("column-selection status actions", () => {
   });
   it("offers independent checked actions and leaves right-click free", () => {
     const element = resources.widget;
-    expect(element.matches("button.icon-button")).toBe(true);
+    expect(element.matches("button.column-selection-icon")).toBe(true);
     expect(element.getAttribute("aria-label")).toBe("Column Selection Sticky Mode");
     expect(element.getAttribute("aria-pressed")).toBe("false");
     expect(commands().map((item) => item.command)).toEqual([

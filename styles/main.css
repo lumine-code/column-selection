@@ -1,3 +1,10 @@
+.status-bar .column-selection-icon {
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+
 .status-bar .column-selection-icon .icon::before {
   margin-right: 0;
 }
